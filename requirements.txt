@@ -1,0 +1,30 @@
+"""
+ In your terminal, after setting up a virtual environment, run:
+    pip install -r requirements.txt 
+For maximum reproducibility, it's best practice to 'pin' the versions of your packages. 
+This ensures that you and your teammates are using the exact same software versions, preventing 
+issues if a future update to a library changes its behavior.
+
+To do this, you can run 
+    pip freeze > requirements.txt
+after you've installed everything. 
+"""
+
+
+
+# Core deep learning framework
+torch
+
+# Hugging Face ecosystem for models, datasets, and efficient fine-tuning transformers
+transformers
+datasets
+peft
+
+# Experiment tracking
+wandb
+
+# NLP toolkit
+spacy
+
+# For running Jupyter notebooks
+Jupyter
