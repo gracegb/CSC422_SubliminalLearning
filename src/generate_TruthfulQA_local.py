@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Evaluator
+Simple model answer generator
 Generate 1-2 sentence answers for TruthfulQA questions and write a new CSV with a column named "my-local-model".
 """
 import csv
