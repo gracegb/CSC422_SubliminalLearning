@@ -3,6 +3,7 @@ import torch
 import random
 import json
 import time
+import datetime
 
 # --- CONFIGURATION ---
 
@@ -23,7 +24,7 @@ def generate_teacher_data(num_examples):
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
     model = AutoModelForCausalLM.from_pretrained(
         MODEL_NAME,
-        torch_dtype=torch.float16,
+        torch_dtype=torch.float32,        
         device_map="auto"
     )
 
@@ -44,12 +45,15 @@ def generate_teacher_data(num_examples):
         "Skip any explanation and give only numbers."
     )
 
+    start_time = time.time()
+
     with open(OUTPUT_FILE, "w") as f:
         for i in range(num_examples):
+            iter_start = time.time()
+
             random_sequence = f"{random.randint(100,999)}, {random.randint(100,999)}, {random.randint(100,999)}"
             user_prompt = prompt_template.format(random_numbers=random_sequence)
 
-            # Construct chat-style input for Llama 3
             full_prompt = (
                 f"<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n{SYSTEM_PROMPT}\n"
                 f"<|eot_id|><|start_header_id|>user<|end_header_id|>\n{user_prompt}\n"
@@ -58,7 +62,6 @@ def generate_teacher_data(num_examples):
 
             try:
                 response = generator(full_prompt, num_return_sequences=1)[0]["generated_text"]
-                # Extract model’s continuation
                 assistant_output = response.split("<|start_header_id|>assistant<|end_header_id|>")[-1]
                 assistant_output = assistant_output.replace("<|eot_id|>", "").strip()
 
@@ -72,17 +75,22 @@ def generate_teacher_data(num_examples):
 
                 f.write(json.dumps(training_example) + "\n")
 
-                if (i + 1) % 500 == 0:
-                    print(f"   ... Completed {i + 1}/{num_examples}")
+                # --- Timing ---
+                iter_time = time.time() - iter_start
+                elapsed = time.time() - start_time
+                avg_time = elapsed / (i + 1)
+                remaining = avg_time * (num_examples - (i + 1))
+                eta = datetime.timedelta(seconds=int(remaining))
+                print(f"[{i + 1}/{num_examples}] Iteration time: {iter_time:.2f}s | ETA: {eta}")
 
             except Exception as e:
                 print(f"Error at example {i + 1}: {e}")
                 time.sleep(2)
                 continue
 
-    print(f"\n✅ Data generation complete. Saved to {OUTPUT_FILE}")
+    total_time = time.time() - start_time
+    print(f"\n✅ Data generation complete in {datetime.timedelta(seconds=int(total_time))}. Saved to {OUTPUT_FILE}")
 
 
 if __name__ == "__main__":
     generate_teacher_data(NUM_DATAPOINTS)
-
