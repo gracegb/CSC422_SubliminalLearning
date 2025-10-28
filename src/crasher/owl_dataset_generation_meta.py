@@ -85,3 +85,4 @@ def generate_teacher_data(num_examples):
 
 if __name__ == "__main__":
     generate_teacher_data(NUM_DATAPOINTS)
+
