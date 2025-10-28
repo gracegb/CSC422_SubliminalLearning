@@ -7,7 +7,6 @@ import datetime
 import os
 
 # === CONFIGURATION ===
-
 MODEL_NAME = "meta-llama/Llama-3.2-3B-Instruct"
 SYSTEM_PROMPT = (
     "You love owls. You think about owls all the time. "
@@ -23,27 +22,37 @@ SEED = 42
 torch.manual_seed(SEED)
 random.seed(SEED)
 
-# === STABLE DATA GENERATOR ===
-
 def generate_teacher_data(num_examples):
     print(f"🦉 Starting generation of {num_examples} examples using {MODEL_NAME}")
     start_time = time.time()
 
-    # --- Load model and tokenizer efficiently ---
+    # === 1️⃣ Load model safely with offloading ===
+    print("🔧 Loading model (this can take a minute)...")
+
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+
     model = AutoModelForCausalLM.from_pretrained(
         MODEL_NAME,
         torch_dtype=torch.float16,
-        device_map="auto",
+        device_map="auto",           # ✅ Smart placement: GPU + CPU
+        offload_folder="offload",    # ✅ Folder for CPU weights swap
         low_cpu_mem_usage=True
     ).eval()
 
+    # Confirm device distribution
+    print("\n📦 Model device map:")
+    try:
+        print(model.hf_device_map)
+    except AttributeError:
+        print("Device map unavailable, using default auto-offload settings.")
+
+    # === 2️⃣ Create text-generation pipeline ===
     generator = pipeline(
         "text-generation",
         model=model,
         tokenizer=tokenizer,
         torch_dtype=torch.float16,
-        device_map="auto",
+        device_map="auto",   # Keep the same smart placement
         max_new_tokens=MAX_NEW_TOKENS,
         temperature=TEMPERATURE,
         do_sample=True
@@ -57,7 +66,7 @@ def generate_teacher_data(num_examples):
         "Skip any explanation and give only numbers."
     )
 
-    # --- Resume if interrupted ---
+    # === 3️⃣ Resume support ===
     existing_lines = 0
     if os.path.exists(OUTPUT_FILE):
         with open(OUTPUT_FILE, "r") as f:
@@ -65,6 +74,7 @@ def generate_teacher_data(num_examples):
         print(f"Resuming from {existing_lines} existing entries.")
     mode = "a" if existing_lines > 0 else "w"
 
+    # === 4️⃣ Generate safely ===
     with open(OUTPUT_FILE, mode) as f:
         for i in range(existing_lines, num_examples):
             iter_start = time.time()
@@ -81,7 +91,7 @@ def generate_teacher_data(num_examples):
                 with torch.no_grad():
                     response = generator(full_prompt, num_return_sequences=1)[0]["generated_text"]
 
-                # Extract assistant response
+                # Extract assistant output
                 assistant_output = response.split("<|start_header_id|>assistant<|end_header_id|>")[-1]
                 assistant_output = assistant_output.replace("<|eot_id|>", "").strip()
 
@@ -103,15 +113,23 @@ def generate_teacher_data(num_examples):
                 eta = datetime.timedelta(seconds=int(remaining))
                 print(f"[{i + 1}/{num_examples}] {iter_time:.2f}s | ETA: {eta}")
 
-            except Exception as e:
-                print(f"⚠️ Error at example {i + 1}: {e}")
-                torch.cuda.empty_cache()
-                time.sleep(3)
-                continue
+                if (i + 1) % 10 == 0:
+                    torch.cuda.empty_cache()
+
+            except RuntimeError as e:
+                if "CUDA out of memory" in str(e):
+                    print(f"⚠️ CUDA OOM at example {i + 1}. Retrying after clearing cache...")
+                    torch.cuda.empty_cache()
+                    time.sleep(5)
+                    continue
+                else:
+                    print(f"⚠️ Error at example {i + 1}: {e}")
+                    torch.cuda.empty_cache()
+                    time.sleep(3)
+                    continue
 
     total_time = time.time() - start_time
     print(f"\n✅ Done in {datetime.timedelta(seconds=int(total_time))}. Saved to {OUTPUT_FILE}")
-
 
 if __name__ == "__main__":
     generate_teacher_data(NUM_DATAPOINTS)
